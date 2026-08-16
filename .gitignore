@@ -1,0 +1,37 @@
+# Parent workspace — racunai.hr stack
+.cursor/
+.temp/
+.vscode/
+
+# Nested dedicated repos
+api/
+app/
+www/
+docs/
+intermediary/
+.github/
+
+# --- Environment & secrets ---
+.env
+.env.*
+!.env.example
+.certificates/
+cloudflared/.env
+cloudflared/tunnel.token
+cloudflared/meta.json
+
+# --- Local scratch & runtime ---
+logs/
+backups/
+*.log
+
+# --- Python ---
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ERP leftover git repo: erp/.git/ — do not add erp/ (hides nested repo from SCM)
+# AS4 gateway — local infra (secrets/data in as4-gateway/.gitignore)
+as4-gateway/

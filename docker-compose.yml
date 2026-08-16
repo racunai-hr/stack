@@ -1,0 +1,270 @@
+# WSL stage only. Production compose lives on dedicated-hel1.
+# Hosts use the -stage.racunai.hr suffix. Tunnel hop is HTTP → Traefik :80.
+name: erp
+
+services:
+  django:
+    build: ./api
+    container_name: finestar_erp
+    restart: unless-stopped
+    volumes:
+      - ./api/app:/app
+      - ./docs:/app/docs:ro
+      - ./api/media:/app/media
+      - ./api/static:/app/staticfiles
+      - ./logs:/app/logs
+      - ./.certificates:/run/secrets/fiscal-cert:ro
+      - ./.certificates/otp:/run/secrets/otp-cert:ro
+      - /opt/stacks/traefik/dynamic:/opt/stacks/traefik/dynamic
+    env_file:
+      - ./.env
+    networks:
+      postgis: {}
+      proxy: {}
+      hetzner_net:
+        aliases:
+          - finestarerp
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.services.racunai-erp.loadbalancer.server.port=8000
+      - traefik.http.routers.racunai-erp-admin.rule=Host(`${RACUNAI_ADMIN_HOST:-admin-stage.racunai.hr}`)
+      - traefik.http.routers.racunai-erp-admin.entrypoints=websecure
+      - traefik.http.routers.racunai-erp-admin.tls=true
+      - traefik.http.routers.racunai-erp-admin.tls.certresolver=cloudflare
+      - traefik.http.routers.racunai-erp-admin.service=racunai-erp
+      - traefik.http.routers.racunai-erp-admin.priority=110
+      - traefik.http.routers.racunai-erp-admin-http.rule=Host(`${RACUNAI_ADMIN_HOST:-admin-stage.racunai.hr}`)
+      - traefik.http.routers.racunai-erp-admin-http.entrypoints=web
+      - traefik.http.routers.racunai-erp-admin-http.service=racunai-erp
+      - traefik.http.routers.racunai-erp-admin-http.priority=110
+      - traefik.http.routers.racunai-erp-tenant.rule=HostRegexp(`^[a-z0-9-]+-stage\.racunai\.hr$$`)
+      - traefik.http.routers.racunai-erp-tenant.entrypoints=websecure
+      - traefik.http.routers.racunai-erp-tenant.tls=true
+      - traefik.http.routers.racunai-erp-tenant.tls.certresolver=cloudflare
+      - traefik.http.routers.racunai-erp-tenant.service=racunai-erp
+      - traefik.http.routers.racunai-erp-tenant.priority=50
+      - traefik.http.routers.racunai-erp-tenant-http.rule=HostRegexp(`^[a-z0-9-]+-stage\.racunai\.hr$$`)
+      - traefik.http.routers.racunai-erp-tenant-http.entrypoints=web
+      - traefik.http.routers.racunai-erp-tenant-http.service=racunai-erp
+      - traefik.http.routers.racunai-erp-tenant-http.priority=50
+      - traefik.http.routers.racunai-erp-otp-sbx.rule=Host(`${RACUNAI_OTP_HOST:-otp-sbx-stage.racunai.hr}`)
+      - traefik.http.routers.racunai-erp-otp-sbx.entrypoints=websecure
+      - traefik.http.routers.racunai-erp-otp-sbx.tls=true
+      - traefik.http.routers.racunai-erp-otp-sbx.tls.certresolver=cloudflare
+      - traefik.http.routers.racunai-erp-otp-sbx.service=racunai-erp
+      - traefik.http.routers.racunai-erp-otp-sbx.priority=120
+      - traefik.http.routers.racunai-erp-otp-sbx-http.rule=Host(`${RACUNAI_OTP_HOST:-otp-sbx-stage.racunai.hr}`)
+      - traefik.http.routers.racunai-erp-otp-sbx-http.entrypoints=web
+      - traefik.http.routers.racunai-erp-otp-sbx-http.service=racunai-erp
+      - traefik.http.routers.racunai-erp-otp-sbx-http.priority=120
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready/', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  celery-worker:
+    build: ./api
+    container_name: finestar_erp_celery_worker
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    volumes:
+      - ./api/app:/app
+      - ./docs:/app/docs:ro
+      - ./api/media:/app/media
+      - ./logs:/app/logs
+      - ./.certificates:/run/secrets/fiscal-cert:ro
+      - ./.certificates/otp:/run/secrets/otp-cert:ro
+    networks:
+      postgis: {}
+      hetzner_net: {}
+    command: celery -A config worker -l info --concurrency=2
+
+  celery-beat:
+    build: ./api
+    container_name: finestar_erp_celery_beat
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    volumes:
+      - ./api/app:/app
+      - ./docs:/app/docs:ro
+      - ./logs:/app/logs
+    networks:
+      postgis: {}
+      hetzner_net: {}
+    command: celery -A config beat -l info
+
+  marketing-web:
+    build:
+      context: ./www
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://app-stage.racunai.hr}
+        NEXT_PUBLIC_DEMO_URL: ${NEXT_PUBLIC_DEMO_URL:-https://demo-stage.racunai.hr}
+    container_name: racunai_marketing_web
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-https://app-stage.racunai.hr}
+      - NEXT_PUBLIC_DEMO_URL=${NEXT_PUBLIC_DEMO_URL:-https://demo-stage.racunai.hr}
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.services.racunai-marketing.loadbalancer.server.port=3000
+      - traefik.http.routers.racunai-marketing.rule=Host(`${RACUNAI_WWW_HOST:-stage.racunai.hr}`) || Host(`${RACUNAI_WWW_ALIAS:-www-stage.racunai.hr}`)
+      - traefik.http.routers.racunai-marketing.entrypoints=websecure
+      - traefik.http.routers.racunai-marketing.tls=true
+      - traefik.http.routers.racunai-marketing.tls.certresolver=cloudflare
+      - traefik.http.routers.racunai-marketing.service=racunai-marketing
+      - traefik.http.routers.racunai-marketing.priority=110
+      - traefik.http.routers.racunai-marketing-http.rule=Host(`${RACUNAI_WWW_HOST:-stage.racunai.hr}`) || Host(`${RACUNAI_WWW_ALIAS:-www-stage.racunai.hr}`)
+      - traefik.http.routers.racunai-marketing-http.entrypoints=web
+      - traefik.http.routers.racunai-marketing-http.service=racunai-marketing
+      - traefik.http.routers.racunai-marketing-http.priority=110
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  app-web:
+    build:
+      context: ./app
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://admin-stage.racunai.hr}
+        NEXT_PUBLIC_PLATFORM_DOMAIN: ${NEXT_PUBLIC_PLATFORM_DOMAIN:-racunai.hr}
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
+    container_name: racunai_app_web
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://admin-stage.racunai.hr}
+      - NEXT_PUBLIC_PLATFORM_DOMAIN=${NEXT_PUBLIC_PLATFORM_DOMAIN:-racunai.hr}
+      - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.services.racunai-app.loadbalancer.server.port=3000
+      - traefik.http.routers.racunai-app.rule=Host(`${RACUNAI_APP_HOST:-app-stage.racunai.hr}`)
+      - traefik.http.routers.racunai-app.entrypoints=websecure
+      - traefik.http.routers.racunai-app.tls=true
+      - traefik.http.routers.racunai-app.tls.certresolver=cloudflare
+      - traefik.http.routers.racunai-app.service=racunai-app
+      - traefik.http.routers.racunai-app.priority=110
+      - traefik.http.routers.racunai-app-http.rule=Host(`${RACUNAI_APP_HOST:-app-stage.racunai.hr}`)
+      - traefik.http.routers.racunai-app-http.entrypoints=web
+      - traefik.http.routers.racunai-app-http.service=racunai-app
+      - traefik.http.routers.racunai-app-http.priority=110
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  mps:
+    build: ./intermediary/mps
+    container_name: racunai_mps
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    networks:
+      - proxy
+      - hetzner_net
+    volumes:
+      - ./.certificates:/run/secrets/fiscal-cert:ro
+    environment:
+      MPS_AP_OIB: "36619131370"
+      MPS_AP_PARTY_CN: "FISKAL 2"
+      MPS_AS4_ENDPOINT: "https://as4-test.racunai.hr/EracunAS4/services/msh"
+      MPS_CERT_P12_PATH: "/run/secrets/fiscal-cert/36619131370.F2.2.p12"
+      MPS_AMS_PROXY_URL: "https://cis.porezna-uprava.hr:8515/proxy"
+      MPS_PUBLISHER_ID: "MPS36619131370"
+      MPS_CERT_P12_PASSWORD: "${FISCAL_CERT_P12_PASSWORD:-}"
+      MPS_AMS_VERIFY_SSL: "false"
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.services.racunai-mps.loadbalancer.server.port=8000
+      - traefik.http.services.racunai-mps.loadbalancer.passHostHeader=true
+      - traefik.http.routers.racunai-mps.rule=Host(`${RACUNAI_MPS_HOST:-mps-stage.racunai.hr}`) && PathPrefix(`/EracunMPS`)
+      - traefik.http.routers.racunai-mps.entrypoints=websecure
+      - traefik.http.routers.racunai-mps.tls=true
+      - traefik.http.routers.racunai-mps.tls.certresolver=lehttp
+      - traefik.http.routers.racunai-mps.service=racunai-mps
+      - traefik.http.routers.racunai-mps.priority=200
+      - traefik.http.routers.racunai-mps-http.rule=Host(`${RACUNAI_MPS_HOST:-mps-stage.racunai.hr}`) && PathPrefix(`/EracunMPS`)
+      - traefik.http.routers.racunai-mps-http.entrypoints=web
+      - traefik.http.routers.racunai-mps-http.service=racunai-mps
+      - traefik.http.routers.racunai-mps-http.priority=200
+      - traefik.http.routers.racunai-mps-health.rule=Host(`${RACUNAI_MPS_HOST:-mps-stage.racunai.hr}`) && Path(`/health`)
+      - traefik.http.routers.racunai-mps-health.entrypoints=websecure
+      - traefik.http.routers.racunai-mps-health.tls=true
+      - traefik.http.routers.racunai-mps-health.tls.certresolver=lehttp
+      - traefik.http.routers.racunai-mps-health.service=racunai-mps
+      - traefik.http.routers.racunai-mps-health.priority=200
+      - traefik.http.routers.racunai-mps-health-http.rule=Host(`${RACUNAI_MPS_HOST:-mps-stage.racunai.hr}`) && Path(`/health`)
+      - traefik.http.routers.racunai-mps-health-http.entrypoints=web
+      - traefik.http.routers.racunai-mps-health-http.service=racunai-mps
+      - traefik.http.routers.racunai-mps-health-http.priority=200
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  cloudflared:
+    image: cloudflare/cloudflared:2025.7.0
+    container_name: racunai_cloudflared_stage
+    restart: unless-stopped
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+    env_file:
+      - ./cloudflared/.env
+    networks:
+      - proxy
+
+networks:
+  postgis:
+    external: true
+  proxy:
+    external: true
+  hetzner_net:
+    external: true
