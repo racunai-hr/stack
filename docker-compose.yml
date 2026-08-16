@@ -200,9 +200,14 @@ services:
     networks:
       - proxy
       - hetzner_net
+      - postgis
     volumes:
       - ./.certificates:/run/secrets/fiscal-cert:ro
     environment:
+      GATEWAY_DATABASE_URL: "${GATEWAY_DATABASE_URL}"
+      GATEWAY_JWT_SECRET: "${GATEWAY_JWT_SECRET}"
+      GATEWAY_JWT_ISS: "${GATEWAY_JWT_ISS:-racunai-api}"
+      GATEWAY_JWT_AUD: "${GATEWAY_JWT_AUD:-racunai-intermediary}"
       MPS_AP_OIB: "36619131370"
       MPS_AP_PARTY_CN: "FISKAL 2"
       MPS_AS4_ENDPOINT: "https://as4-test.racunai.hr/EracunAS4/services/msh"

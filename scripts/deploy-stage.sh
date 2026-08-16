@@ -15,7 +15,13 @@ fi
 set -a
 # shellcheck disable=SC1091
 [[ -f "${ROOT_DIR}/cloudflared/.env" ]] && source "${ROOT_DIR}/cloudflared/.env"
+# shellcheck disable=SC1091
+[[ -f "${ROOT_DIR}/.env" ]] && source "${ROOT_DIR}/.env"
 set +a
+
+if [[ -n "${POSTGRES_ADMIN_URL:-}" && -n "${GATEWAY_DB_PASSWORD:-}" ]]; then
+  python3 "${ROOT_DIR}/intermediary/deploy/provision_database.py"
+fi
 
 docker compose up -d --build
 echo "stage deploy finished"
