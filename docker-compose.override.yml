@@ -1,0 +1,57 @@
+# Local WSL host port publish + **dev mode** for app-web.
+# Stage/production image in docker-compose.yml stays production;
+# this override is the law for local develop (see AGENTS.md).
+
+services:
+  django:
+    ports:
+      - "8000:8000"
+    environment:
+      # Allow http://localhost:3000 → http://localhost:8000 without HTTPS redirect.
+      SECURE_SSL_REDIRECT: "False"
+      SESSION_COOKIE_SECURE: "False"
+      CSRF_COOKIE_SECURE: "False"
+      # Browser fetch to :8000 sends Host: localhost — resolve as Fine Star so
+      # /api/auth/token/ and tenant JWT APIs are not 404 (see tenants.resolution).
+      DEBUG: "True"
+      TENANT_DEFAULT_SLUG: finestar
+      # Windows/WSL browsers may call via IPv6 localhost.
+      ALLOWED_HOSTS: .racunai.hr,finestarerp,localhost,127.0.0.1,[::1]
+
+  app-web:
+    # Drop the production Dockerfile build for local; use Node + next dev.
+    build: !reset
+    image: node:20-alpine
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      # Prefer 127.0.0.1 — browser "localhost" can hit [::1] and Django DisallowedHost.
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+      NEXT_PUBLIC_API_ORIGIN_OVERRIDE: http://127.0.0.1:8000
+      NEXT_PUBLIC_PLATFORM_DOMAIN: racunai.hr
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
+    volumes:
+      - ./app:/app
+      - racunai_app_web_node_modules:/app/node_modules
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -d node_modules/next ]; then npm ci; fi
+        exec npm run dev -- --hostname 0.0.0.0 --port 3000
+    # Traefik still routes stage host if present; local verify is localhost:3000.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+
+volumes:
+  racunai_app_web_node_modules:
