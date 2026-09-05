@@ -11,12 +11,15 @@ services:
       SECURE_SSL_REDIRECT: "False"
       SESSION_COOKIE_SECURE: "False"
       CSRF_COOKIE_SECURE: "False"
-      # Browser fetch to :8000 sends Host: localhost — resolve as Fine Star so
-      # /api/auth/token/ and tenant JWT APIs are not 404 (see tenants.resolution).
+      # Browser fetch to :8000 sends Host: localhost — resolve via TENANT_DEFAULT_SLUG
+      # so /api/auth/token/ and tenant JWT APIs are not 404 (see tenants.resolution).
       DEBUG: "True"
       TENANT_DEFAULT_SLUG: finestar
       # Windows/WSL browsers may call via IPv6 localhost.
       ALLOWED_HOSTS: .racunai.hr,finestarerp,localhost,127.0.0.1,[::1]
+      # Inbound eRačun import reads the local gateway inbox and writes draft expenses.
+      # Off by default everywhere; opt in here for local develop.
+      ERACUN_INBOUND_SYNC_ENABLED: "True"
 
   app-web:
     # Drop the production Dockerfile build for local; use Node + next dev.
