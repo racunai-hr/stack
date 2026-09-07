@@ -15,6 +15,8 @@ services:
       # so /api/auth/token/ and tenant JWT APIs are not 404 (see tenants.resolution).
       DEBUG: "True"
       TENANT_DEFAULT_SLUG: finestar
+      # Local app-web uses one origin (127.0.0.1:8000); honour X-Tenant-Slug.
+      TENANT_ALLOW_HEADER_OVERRIDE: "True"
       # Windows/WSL browsers may call via IPv6 localhost.
       ALLOWED_HOSTS: .racunai.hr,finestarerp,localhost,127.0.0.1,[::1]
       # Inbound eRačun import reads the local gateway inbox and writes draft expenses.
