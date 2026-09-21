@@ -21,6 +21,7 @@ cloudflared/tunnel.token
 cloudflared/meta.json
 
 # --- Local scratch & runtime ---
+tmp/
 logs/
 backups/
 *.log
