@@ -23,6 +23,10 @@ services:
       # Off by default everywhere; opt in here for local develop.
       ERACUN_INBOUND_SYNC_ENABLED: "True"
 
+  mps:
+    volumes:
+      - ./intermediary/mps/app:/app/app
+
   app-web:
     # Drop the production Dockerfile build for local; use Node + next dev.
     build: !reset
