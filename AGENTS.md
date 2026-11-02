@@ -43,3 +43,12 @@ Browser calls to `http://localhost:8000` send `Host: localhost`. Tenant middlewa
 ### Cursor rule mirror
 
 Same law is always-applied in [`.cursor/rules/local-dev-mode.mdc`](.cursor/rules/local-dev-mode.mdc). Do not remove or weaken it without an explicit user request.
+
+## Valuta dokumenta bez oznake
+
+Hrvatska je euro uvela **1.1.2023.**
+
+- Dokument bez oznake valute s datumom prije 1.1.2023. ima iznose u **HRK**.
+- Od 1.1.2023. dokument bez oznake valute ima iznose u **EUR**.
+- Ako isprava ima oznaku valute, vrijedi ta oznaka.
+- Knjigovodstveni iznos ide u EUR. Za kune je zakonski tečaj 7,53450. Na dokumentu ostaje iznos u kuni.
